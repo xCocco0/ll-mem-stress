@@ -67,7 +67,9 @@ typedef struct {
 #define FLIP(addr, bit) !((addr ^= (1 << bit)) & (1 << bit))
 
 static const int bits[] = {BITS};
-/*	- - 2 1 - 3 -
+/*	bits = {3,4,1}
+ *	6 5 4 3 2 1 0
+ *	----+-+---+--
  *	0 0 0 0 0 0 0
  *	0 0 0 1 0 0 0
  *	0 0 1 0 0 0 0
@@ -113,7 +115,6 @@ int main(int argc, char **argv)
 	mlockall(MCL_FUTURE);
 
 	printf("Successfully loaded at %p\n", addr);
-	printf("Bit mask: %#x\n", 0);
 	
 	void* start_addr = (void*) ((unsigned long)(addr) + BASE);
 	prepare_mem(start_addr);
@@ -140,31 +141,3 @@ int main(int argc, char **argv)
 	)
 	return 0;
 }
-/*
-	//////////////////
-
-	char b;
-	unsigned int offset = 0;
-	long diffns;
-	struct timespec now, old;
-	clock_gettime(CLOCK_MONOTONIC, &old);
-
-	while(1) {
-		for(int i = 0; i < ITERATIONS; i++) {
-			b = addr[offset];
-			offset = (offset + STRIDE) % MSIZE;
-		}
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		diffns = (now.tv_sec - old.tv_sec)*1000000000L + (now.tv_nsec - old.tv_nsec);
-		printf("Duration: %.3f us\t Bandwidth: %f GB/s\n",\
-			diffns/1000.0, (float)(ITERATIONS)/diffns );
-		//old = now;
-		usleep(100000);
-		clock_gettime(CLOCK_MONOTONIC, &old);
-	}
-
-	getc(stdin);
-
-	return 0;
-}
-*/
