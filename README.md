@@ -1,7 +1,7 @@
 # Linked list memory stressor
 This repository contains the source files for a memory stressor based on linked list transversal. The operations implemented are divided into:
 - First part - allocate memory for the stressor that will be used for the linked list transversal
-- Seconds part - jump into an infinite loop of only load operations (loop is unrolled by a factor 32 to reduce loop overheads)
+- Second part - jump into an infinite loop of only load operations (loop is unrolled by a factor 32 to reduce loop overheads)
 
 ## How to compile
 To compile some ready-made examples
