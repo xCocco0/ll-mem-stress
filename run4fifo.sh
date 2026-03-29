@@ -20,21 +20,29 @@ cleanup() {
 
 trap "cleanup" INT TERM EXIT
 
+chrt -p -f 31 $$
+
 {
-	echo Starting job on CPU0
-	chrt -d --sched-runtime 950000000 --sched-period 1000000000 --sched-deadline 0 0 $1
+	echo Starting job on CPU1
+	taskset 0x1 chrt -f 30 $*
 }&
 
 sleep 1
 {
 	echo Starting job on CPU1
-	chrt -d --sched-runtime 950000000 --sched-period 1000000000 --sched-deadline 0 0 $1
+	taskset 0x2 chrt -f 30 $*
 }&
 
 sleep 1
 {
 	echo Starting job on CPU2
-	chrt -d --sched-runtime 950000000 --sched-period 1000000000 --sched-deadline 0 0 $1
+	taskset 0x4 chrt -f 30 $*
+}&
+
+sleep 1
+{
+	echo Starting job on CPU3
+	taskset 0x8 chrt -f 30 $*
 }&
 
 wait

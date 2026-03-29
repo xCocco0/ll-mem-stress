@@ -8,47 +8,23 @@
 //#define USE_STORE
 //#define AUTO_THROTTLE
 
-#if defined(TEST1)
-#define BITS 14,15,4,5,6 //1
-#define BASE 0x0
-#elif defined(TEST2)
-#define BITS 14,15 //2
-#define BASE 0x0
-#elif defined(TEST3)
-#define BITS 16,17,18,19,6,7,8,9,10,11,12,13,14,15 //3
-#define BASE 0x0
-#elif defined(TEST4)
-#define BITS 16,17,18,19,20 //4
-#define BASE 0x0
-#elif defined(TESTP1)
-#define BITS 15,16,4,5,6 //P1
-#define BASE 0x0
-#elif defined(TESTP2)
-#define BITS 15,16 //P2
-#define BASE 0x0
-#elif defined(TESTP3)
-#define BITS 16,17,18,19,20,6,7,8,9,10,11,12,13,15 //P3
-#define BASE 0x0
-#elif defined(TESTP4)
-#define BITS 16,17,18,19,20 //P4
-#define BASE 0x0
-#else
-#ifndef BITS
-#warning "No test defined. Using default values"
-#define BITS 16,17,7,8,9,10,11,12,13,15
-#endif
 #ifndef BASE
-#define BASE 0x40
-#endif
+#define BASE (0)
 #endif
 
+#ifndef OFFSET
+#define OFFSET (0)
+#endif
 
-#define DEPTH 16
-#if DEPTH < 8
-#error depth too low
+#ifndef DEPTH
+#define DEPTH (8) // >=8
 #endif
 
 #define MEM_SIZE (1<<21)
+
+#ifndef MEM_PRL
+#define MEM_PRL (1)
+#endif
 
 //force loop unrolling
 #define DO_0(body) { body }
@@ -60,23 +36,29 @@
 
 typedef struct {
 	void* next;
-	char byte[DEPTH-sizeof(void*)];
+	unsigned long data[(DEPTH/sizeof(unsigned long)) - 1];
 } mem_chunk;
+
+#if (DEPTH < 8)
+#error DEPTH too small (should be >= 8)
+#elif (DEPTH < 16) && defined(USE_STORE)
+#error DEPTH too small (should be >= 16)
+#endif
 
 // flip bit #bit and return 1 if overflow occured
 #define FLIP(addr, bit) !((addr ^= (1 << bit)) & (1 << bit))
 
 static const int bits[] = {BITS};
-/*	bits = {3,4,1}
- *	6 5 4 3 2 1 0
- *	----+-+---+--
- *	0 0 0 0 0 0 0
- *	0 0 0 1 0 0 0
- *	0 0 1 0 0 0 0
- *	0 0 1 1 0 0 0
- *	0 0 0 0 0 1 0
- *	0 0 0 1 0 1 0
- *	0 0 1 0 0 1 0
+/*  bits = {3,4,1}
+ *  6 5 4 3 2 1 0
+ *  ----+-+---+--
+ *  0 0 0 0 0 0 0
+ *  0 0 0 1 0 0 0
+ *  0 0 1 0 0 0 0
+ *  0 0 1 1 0 0 0
+ *  0 0 0 0 0 1 0
+ *  0 0 0 1 0 1 0
+ *  0 0 1 0 0 1 0
  * */
 
 void next_offset(unsigned long *offset, int i) {
@@ -100,44 +82,62 @@ void prepare_mem(char* base) {
 	copy_lw(base, old, 0);
 }
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
-	char* addr;
+	char* addr[MEM_PRL];
 
-	addr = mmap(NULL, MEM_SIZE, PROT_READ | PROT_WRITE,
-		MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, -1, 0);
-	if(addr == (char*) -1) {
-		fprintf(stderr, "%d ", errno);
-		perror("Error mmap");
-		exit(1);
+	for(int i = 0; i < MEM_PRL; ++i) {
+		addr[i] = mmap(NULL, MEM_SIZE, PROT_READ | PROT_WRITE,
+				MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, -1, 0);
+		if(addr[i] == (char*) -1) {
+			fprintf(stderr, "%d ", errno);
+			perror("Error mmap");
+			exit(1);
+		}
 	}
 
 	mlockall(MCL_FUTURE);
 
 	printf("Successfully loaded at %p\n", addr);
-	
-	void* start_addr = (void*) ((unsigned long)(addr) + BASE);
-	prepare_mem(start_addr);
-	
-	mem_chunk r;
-	register mem_chunk* c = (mem_chunk*) start_addr;
-	register int i;
-	for(;;) DO_5(
-	{
-#ifdef AUTO_THROTTLE
-		for(i = 0; i < 1<<27; ++i) { // ~1500ms
-#endif
-#ifdef USE_STORE	
-			r = *c;
-#endif
-			c = *(mem_chunk**)c;
-			asm volatile ("" : : "g"(c));
-			//printf("0x%x\n", c);
-#ifdef AUTO_THROTTLE
-		}
-		usleep(2500); //let the OS breath 2.5ms/1500ms = 0.167%
-#endif
+
+	void* start_addr[MEM_PRL];
+	for(int i = 0; i < MEM_PRL; ++i) {
+		start_addr[i] = (void*) ((unsigned long)(addr[i]) + BASE + (OFFSET * i));
+		prepare_mem(start_addr[i]);
 	}
-	)
+
+	mem_chunk r[MEM_PRL];
+	mem_chunk* c[MEM_PRL];
+	for(int i = 0; i < MEM_PRL; ++i) {
+		c[i] = (mem_chunk*) start_addr[i];
+	}
+
+	for(;;) DO_0(
+		{
+			#ifdef AUTO_THROTTLE
+			for(i = 0; i < 1<<27; ++i) { // ~1500ms
+			#endif
+
+
+			for(int i = 0; i < MEM_PRL; ++i) {
+
+				#ifdef USE_STORE
+				for(int j = 0; j < DEPTH/sizeof(unsigned long); ++j) {
+					c[i]->data[j] = (unsigned long) c[i]->next;
+				}
+				#endif
+
+				c[i] = *(mem_chunk**) c[i];
+				asm volatile ("" : : "g"(c[i]));
+				//printf("0x%lx\n", (unsigned long) c[i]);
+			}
+
+			#ifdef AUTO_THROTTLE
+			}
+			usleep(2500); //let the OS breath 2.5ms/1500ms = 0.167%
+			#endif
+		}
+	);
+
 	return 0;
 }
